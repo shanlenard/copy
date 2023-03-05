@@ -1,0 +1,68 @@
+To create the Login Button in the LoginActivity I use rxjava and initialize the compositedisposable to dispose the observable to avoid memory leaks
+
+private final CompositeDisposable btnLogin = new CompositeDisposable();
+
+I initialize the edittext and buttons
+TextView textView;
+EditText inputUsername, inputPassword;
+Button lgnButton;
+
+lgnButton = findViewById(R.id.loginBtn);
+inputUsername = findViewById(R.id.inputUsernameLogin);
+inputPassword = findViewById(R.id.inputLoginPassword);
+
+For the button I created a method initLogin() with the parameters of username and password. And I use rxjava. Throttle is use to avoid multiple click on button. Subscribe is use to call an observable from the viewmodel and to the observer.
+private void initLogin() {
+    btnLogin.add(RxView.clicks(lgnButton)
+            .throttleFirst(500, TimeUnit.MILLISECONDS)
+            .subscribe(new Consumer<Unit>() {
+                @Override
+                public void accept(Unit unit) throws Exception {
+                    userViewModel.login(inputUsername.getText().toString(), inputPassword.getText().toString());
+                }
+            }, new Consumer<Throwable>() {
+                @Override
+                public void accept(Throwable throwable) throws Exception {
+                    Timber.e("Error");
+                }
+            }));
+}
+
+To check the username and password if it’s existing in local database realm we need an observable then I created a query to check both username and password with the logical condition “OR” and “||” so if both of them doesn’t exist or either the user can’t login.
+private Observable<RealmResults<RealmUser>> getUsers(String username, String password) {
+    RealmResults<RealmUser> mRealmResults = mRealm.where(RealmUser.class).equalTo("username", username).and().equalTo("password", password).findAll();
+    return Observable.just(mRealmResults);
+}
+
+ This is the method from the viewmodel the login to check the username and password to observable “getUsers”
+I have also a condition here if the observable “getUsers” is set to 1 the user must be logged in the condition of realmUsers.size() is greater than 0. And when it’s not greater than 0, there’s a response that tell you can’t login in. 
+public void login(String username, String password) {
+
+    if(username.isEmpty() && password.isEmpty()) {
+        Timber.e("Please enter username and password.");
+    } else {
+        compositeDisposable.add(getUsers(username, password)
+                .subscribeOn(Schedulers.io())
+                .observeOn(AndroidSchedulers.mainThread())
+                .subscribe(new Consumer<RealmResults<RealmUser>>() {
+                    @Override
+                    public void accept(RealmResults<RealmUser> realmUsers) throws Exception {
+                        mRealm.executeTransaction(new Realm.Transaction() {
+                            @Override
+                            public void execute(Realm realm) {
+                                if (realmUsers.size() > 0) {
+                                    Timber.e("Logged in");
+                                } else {
+                                    Timber.e("Your username/password is incorrect or this account doesn't exist.");
+                                }
+                            }
+                        });
+                    }
+                }, new Consumer<Throwable>() {
+                    @Override
+                    public void accept(Throwable throwable) throws Exception {
+
+                    }
+                }));
+    }
+}
